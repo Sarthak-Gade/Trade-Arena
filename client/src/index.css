@@ -1,0 +1,57 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-darkBg: #0b0f19;
+  --color-cardBg: #111827;
+  --color-cardBorder: #1f2937;
+  --color-accentBlue: #2563eb;
+  --color-accentGreen: #10b981;
+  --color-accentRed: #ef4444;
+}
+
+body {
+  background-color: var(--color-darkBg);
+  color: #e5e7eb;
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Glassmorphism card utility */
+.glass-card {
+  background: rgba(17, 24, 39, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Custom glow animations */
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(37, 99, 235, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(37, 99, 235, 0.6);
+  }
+}
+
+.glow-blue {
+  animation: pulseGlow 3s infinite;
+}

@@ -1,0 +1,33 @@
+# Dependency directories
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Environment files
+.env
+server/.env
+*.env
+
+# Production build outputs
+client/dist/
+dist/
+
+# Logs
+*.log
+logs/
+
+# Local uploads and reports
+server/uploads/*
+!server/uploads/.gitkeep
+server/reports/*
+!server/reports/.gitkeep
+
+# IDE and System files
+.vscode/
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
