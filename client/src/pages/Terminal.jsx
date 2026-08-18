@@ -4,7 +4,8 @@ import { setSelectedSymbol, setStocks } from '../store/marketSlice';
 import { fetchPortfolioSuccess } from '../store/portfolioSlice';
 import api from '../utils/api';
 import { useSocket } from '../context/SocketContext';
-import { Search, Plus, Trash2, ArrowUpRight, ArrowDownRight, RefreshCw, X } from 'lucide-react';
+import { Search, Plus, Trash2, ArrowUpRight, ArrowDownRight, RefreshCw, X, Maximize2 } from 'lucide-react';
+import ChartModal from './ChartModal';
 
 const Terminal = () => {
   const dispatch = useDispatch();
@@ -19,6 +20,7 @@ const Terminal = () => {
   const [openOrders, setOpenOrders] = useState([]);
   const [activeTab, setActiveTab] = useState('holdings'); // holdings, positions, open_orders, trade_history
   const [tradeHistory, setTradeHistory] = useState([]);
+  const [showChartModal, setShowChartModal] = useState(false);
   
   // Order ticket state
   const [direction, setDirection] = useState('buy'); // buy, sell
@@ -383,21 +385,33 @@ const Terminal = () => {
               {selectedSymbol} - 1 Month Chart
             </div>
             
-            <div className="flex space-x-1 bg-gray-950/60 p-0.5 rounded-xl border border-gray-800/80">
-              {['candlestick', 'line', 'histogram'].map(type => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => setChartType(type)}
-                  className={`px-2.5 py-1 text-[9px] font-bold uppercase rounded-lg transition-all ${
-                    chartType === type 
-                      ? 'bg-blue-600 text-white shadow shadow-blue-500/20' 
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  {type}
-                </button>
-              ))}
+            <div className="flex items-center space-x-2">
+              <div className="flex space-x-1 bg-gray-950/60 p-0.5 rounded-xl border border-gray-800/80">
+                {['candlestick', 'line', 'histogram'].map(type => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setChartType(type)}
+                    className={`px-2.5 py-1 text-[9px] font-bold uppercase rounded-lg transition-all ${
+                      chartType === type 
+                        ? 'bg-blue-600 text-white shadow shadow-blue-500/20' 
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                id="expand-chart-btn"
+                onClick={() => setShowChartModal(true)}
+                className="flex items-center gap-1 px-2.5 py-1 text-[9px] font-bold uppercase rounded-lg bg-blue-600/10 text-blue-400 border border-blue-500/30 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                title="View Detailed Fullscreen Chart"
+              >
+                <Maximize2 className="w-3 h-3" />
+                <span>Expand</span>
+              </button>
             </div>
           </div>
 
@@ -1041,6 +1055,18 @@ const Terminal = () => {
         </form>
       </div>
       
+      {/* Fullscreen Detailed Chart Modal */}
+      {showChartModal && (
+        <ChartModal
+          selectedStock={selectedStock}
+          socket={socket}
+          onClose={() => setShowChartModal(false)}
+          onTrade={(tradeDir) => {
+            setDirection(tradeDir);
+            setShowChartModal(false);
+          }}
+        />
+      )}
     </div>
   );
 };

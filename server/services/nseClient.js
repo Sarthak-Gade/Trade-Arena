@@ -125,11 +125,13 @@ const getIndicesData = async () => {
 };
 
 /**
- * Fetch 1-month historical OHLCV data for a symbol.
+ * Fetch historical OHLCV data for a symbol.
+ * @param {string} symbol - NSE symbol
+ * @param {number} [days=31] - Number of calendar days to look back
  * Returns array of { date, open, high, low, close, volume } or null.
  */
-const getEquityHistory = async (symbol) => {
-  const cacheKey = `hist_${symbol}`;
+const getEquityHistory = async (symbol, days = 31) => {
+  const cacheKey = `hist_${symbol}_${days}`;
   const cached = cache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) {
     return cached.data;
@@ -142,7 +144,7 @@ const getEquityHistory = async (symbol) => {
     await rateLimitedWait();
     const toDate = new Date();
     const fromDate = new Date();
-    fromDate.setDate(fromDate.getDate() - 31);
+    fromDate.setDate(fromDate.getDate() - Math.max(days, 1));
 
     const fmt = (d) => {
       const dd = String(d.getDate()).padStart(2, '0');

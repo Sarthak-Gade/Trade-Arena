@@ -25,31 +25,41 @@ router.get('/stocks/:symbol', protect, async (req, res) => {
   }
 });
 
-// Get stock 1-month history — tries real NSE data first, falls back to generated
+// Get stock history — supports ?days=N or ?timeframe=1D|1W|1M|3M|6M|1Y
 router.get('/stocks/:symbol/history', protect, async (req, res) => {
   try {
     const symbol = req.params.symbol.toUpperCase();
     const stock = await Stock.findOne({ symbol });
     if (!stock) return res.status(404).json({ success: false, message: 'Stock symbol not found' });
 
+    // Resolve calendar days from query
+    const timeframeMap = { '1D': 1, '1W': 7, '1M': 31, '3M': 92, '6M': 183, '1Y': 365 };
+    let days = 31; // default: 1 month
+    if (req.query.timeframe && timeframeMap[req.query.timeframe.toUpperCase()]) {
+      days = timeframeMap[req.query.timeframe.toUpperCase()];
+    } else if (req.query.days) {
+      days = Math.min(Math.max(parseInt(req.query.days, 10) || 31, 1), 365);
+    }
+
     // Try real NSE historical data first
     try {
       const nseClient = require('../services/nseClient');
-      const realHistory = await nseClient.getEquityHistory(symbol);
-      if (realHistory && realHistory.length >= 5) {
+      const realHistory = await nseClient.getEquityHistory(symbol, days);
+      if (realHistory && realHistory.length >= 1) {
         return res.status(200).json({ success: true, data: realHistory, source: 'nse' });
       }
     } catch (nseErr) {
       // fall through to generated history
     }
 
-    // Fallback: deterministic generated 30-day OHLCV
-    const history = marketDataService.getStockHistory(stock.symbol, stock);
+    // Fallback: deterministic generated OHLCV
+    const history = marketDataService.getStockHistory(stock.symbol, stock, days);
     res.status(200).json({ success: true, data: history, source: 'simulated' });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }
 });
+
 
 // Get computed market indices (REST fallback for initial page load)
 router.get('/indices', protect, async (req, res) => {

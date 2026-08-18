@@ -426,8 +426,8 @@ const seedRandom = (str) => {
   };
 };
 
-// ─── Historical Data (30-day OHLCV) ──────────────────────────────────────────
-const getStockHistory = (symbol, stockData) => {
+// ─── Historical Data (variable-day OHLCV) ─────────────────────────────────────
+const getStockHistory = (symbol, stockData, days = 30) => {
   const { currentPrice, openPrice, highPrice, lowPrice, volume } = stockData;
   const history = [];
   const now = new Date();
@@ -435,7 +435,10 @@ const getStockHistory = (symbol, stockData) => {
   let lastClose = currentPrice;
   let dateCursor = new Date(now);
 
-  for (let i = 0; i < 30; i++) {
+  // Estimate trading days: ~72% of calendar days (250 trading days / year)
+  const tradingDays = Math.ceil(days * 0.72);
+
+  for (let i = 0; i < tradingDays; i++) {
     while (dateCursor.getDay() === 0 || dateCursor.getDay() === 6) {
       dateCursor.setDate(dateCursor.getDate() - 1);
     }
