@@ -114,7 +114,7 @@ const placeOrder = async (userId, orderData) => {
     direction,
     price: orderType === 'market' ? undefined : price,
     triggerPrice: ['stop_loss', 'take_profit'].includes(orderType) ? triggerPrice : undefined,
-    status: sessionStatus === 'CLOSED' ? 'queued' : (orderType === 'market' ? 'executed' : 'pending'),
+    status: sessionStatus !== 'OPEN' ? 'queued' : (orderType === 'market' ? 'executed' : 'pending'),
     brokerage: charges.brokerage,
     stt: charges.stt,
     exchangeCharges: charges.exchangeCharges,

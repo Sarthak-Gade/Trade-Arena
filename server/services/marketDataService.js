@@ -121,19 +121,40 @@ const INDEX_CONSTITUENTS = {
 
 // ─── Market Session ────────────────────────────────────────────────────────────
 const getMarketSessionStatus = () => {
-  const mode = process.env.MARKET_SESSION_MODE || 'ALWAYS_OPEN';
+  const mode = process.env.MARKET_SESSION_MODE || 'AUTO';
   if (mode === 'ALWAYS_OPEN') return 'OPEN';
+  if (mode === 'ALWAYS_CLOSED') return 'CLOSED';
 
   const now = new Date();
-  const opts = { timeZone: 'Asia/Kolkata', hour12: false };
-  const istStr = now.toLocaleString('en-US', opts);
-  const [h, m] = istStr.split(', ')[1].split(':').map(Number);
-  const day = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).getDay();
-  if (day === 0 || day === 6) return 'CLOSED';
-  const mins = h * 60 + m;
-  if (mins >= 9 * 60 && mins < 9 * 60 + 15) return 'PRE_MARKET';
-  if (mins >= 9 * 60 + 15 && mins < 15 * 60 + 30) return 'OPEN';
-  return 'CLOSED';
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      weekday: 'short',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false
+    });
+    const parts = formatter.formatToParts(now);
+    let weekdayStr = '', hour = 0, minute = 0;
+    for (const p of parts) {
+      if (p.type === 'weekday') weekdayStr = p.value;
+      if (p.type === 'hour') hour = parseInt(p.value, 10);
+      if (p.type === 'minute') minute = parseInt(p.value, 10);
+    }
+    if (hour === 24) hour = 0;
+
+    // Weekends (Saturday & Sunday)
+    if (['Sat', 'Sun'].includes(weekdayStr)) return 'CLOSED';
+
+    const mins = hour * 60 + minute;
+    // NSE Market Hours: 09:00 - 09:15 PRE_MARKET, 09:15 - 15:30 OPEN (IST)
+    if (mins >= 9 * 60 && mins < 9 * 60 + 15) return 'PRE_MARKET';
+    if (mins >= 9 * 60 + 15 && mins < 15 * 60 + 30) return 'OPEN';
+    return 'CLOSED';
+  } catch (e) {
+    console.error('Error calculating IST market hours:', e.message);
+    return 'CLOSED';
+  }
 };
 
 // ─── Seeder ────────────────────────────────────────────────────────────────────
@@ -324,7 +345,7 @@ const calculateIndices = (stocks) => {
 // ─── Price Tick Simulator ──────────────────────────────────────────────────────
 // Now uses ±0.05% micro-fluctuations (was ±0.4%) so prices stay near real market values.
 const generatePriceTick = async () => {
-  if (getMarketSessionStatus() === 'CLOSED') return;
+  if (getMarketSessionStatus() !== 'OPEN') return;
 
   try {
     const stocks = await Stock.find().lean();
