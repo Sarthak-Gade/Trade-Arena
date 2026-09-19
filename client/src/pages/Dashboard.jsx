@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -7,12 +7,18 @@ import {
 } from 'recharts';
 import { fetchPortfolioStart, fetchPortfolioSuccess, fetchPortfolioFailure } from '../store/portfolioSlice';
 import { setIndices, setMarketMovers, setSelectedSymbol, setStocks } from '../store/marketSlice';
+import { useSocket } from '../context/SocketContext';
 import api from '../utils/api';
-import { TrendingUp, ArrowUpRight, ArrowDownRight, Award, DollarSign, Percent, AlertCircle, Loader, X } from 'lucide-react';
+import ChartModal from './ChartModal';
+import { 
+  TrendingUp, ArrowUpRight, ArrowDownRight, Award, DollarSign, Percent, 
+  AlertCircle, Loader, X, Search, BarChart2, Zap, Layers, Sparkles
+} from 'lucide-react';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const socket = useSocket();
   
   const { user } = useSelector((state) => state.auth);
   const { summary } = useSelector((state) => state.portfolio);
@@ -24,12 +30,20 @@ const Dashboard = () => {
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [indexConstituents, setIndexConstituents] = useState(null);
 
+  // Search and Chart state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState('ALL');
+  const [selectedStockForChart, setSelectedStockForChart] = useState(null);
+  const searchInputRef = useRef(null);
+  const searchContainerRef = useRef(null);
+
   // Explicit hardcoded symbol lists — mirrors server INDEX_CONSTITUENTS
   // Updated from API on mount; this local copy ensures modal works immediately.
   const LOCAL_INDEX_CONSTITUENTS = {
     'NIFTY 50': ['RELIANCE','TCS','HDFCBANK','INFY','ICICIBANK','HINDUNILVR','ITC','BHARTIARTL','LT','AXISBANK','KOTAKBANK','SBIN','BAJFINANCE','WIPRO','HCLTECH','SUNPHARMA','MARUTI','TATAMOTORS','MM','NTPC','POWERGRID','COALINDIA','ONGC','BPCL','ADANIENT','ADANIPORTS','GRASIM','TATASTEEL','JSWSTEEL','HINDALCO','ULTRACEMCO','ASIANPAINT','TITAN','EICHERMOT','HEROMOTOCO','BAJAJ-AUTO','DIVISLAB','CIPLA','DRREDDY','APOLLOHOSP','NESTLEIND','BRITANNIA','TATACONSUM','BAJAJFINSV','HDFCLIFE','SBILIFE','INDUSINDBK','TECHM','ZOMATO','TRENT'],
     'NIFTY NEXT 50': ['BANKBARODA','PNB','AUBANK','IRCTC','HAL','SIEMENS','DLF','VEDL','LTIM','PERSISTENT','TORNTPHARM','MPHASIS','COFORGE'],
-    'NIFTY BANK': ['HDFCBANK','ICICIBANK','AXISBANK','KOTAKBANK','SBIN','INDUSINDBK','BANKBARODA','PNB','AUBANK','BANDHANBNK','FEDERALBNK','IDFCFIRSTB'],
+    'NIFTY BANK': ['HDFCBANK','ICICICIBANK','AXISBANK','KOTAKBANK','SBIN','INDUSINDBK','BANKBARODA','PNB','AUBANK','BANDHANBNK','FEDERALBNK','IDFCFIRSTB'],
     'NIFTY IT': ['TCS','INFY','WIPRO','HCLTECH','TECHM','MPHASIS','LTIM','PERSISTENT','COFORGE'],
     'NIFTY PHARMA': ['SUNPHARMA','DIVISLAB','CIPLA','DRREDDY','APOLLOHOSP','TORNTPHARM','LUPIN','AUROPHARMA','ALKEM'],
     'NIFTY FINANCIAL SERVICES': ['HDFCBANK','ICICIBANK','AXISBANK','KOTAKBANK','SBIN','BAJFINANCE','BAJAJFINSV','HDFCLIFE','SBILIFE','INDUSINDBK','AUBANK'],
@@ -49,6 +63,33 @@ const Dashboard = () => {
     const stockMap = Object.fromEntries(stocks.map(s => [s.symbol, s]));
     return symbolList.map(sym => stockMap[sym]).filter(Boolean);
   };
+
+  // Keyboard shortcut (Ctrl+K or /) to focus search
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey && e.key.toLowerCase() === 'k') || (e.key === '/' && document.activeElement?.tagName !== 'INPUT')) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        setIsSearchFocused(true);
+      } else if (e.key === 'Escape') {
+        setIsSearchFocused(false);
+        searchInputRef.current?.blur();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Click outside search container to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+        setIsSearchFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
   
   useEffect(() => {
     const loadDashboardData = async () => {
@@ -98,6 +139,51 @@ const Dashboard = () => {
     
     loadDashboardData();
   }, [dispatch]);
+
+  // Filter stocks based on query & category
+  const filteredStocks = React.useMemo(() => {
+    if (!stocks || !stocks.length) return [];
+    let list = stocks;
+
+    // Apply category filter
+    if (selectedCategory === 'NIFTY 50') {
+      const n50 = new Set(LOCAL_INDEX_CONSTITUENTS['NIFTY 50']);
+      list = list.filter(s => n50.has(s.symbol));
+    } else if (selectedCategory === 'BANKING') {
+      list = list.filter(s => s.sector === 'Finance' || s.industry?.includes('Bank'));
+    } else if (selectedCategory === 'IT') {
+      list = list.filter(s => s.sector === 'Technology');
+    } else if (selectedCategory === 'PHARMA') {
+      list = list.filter(s => s.sector === 'Healthcare');
+    } else if (selectedCategory === 'ENERGY') {
+      list = list.filter(s => s.sector === 'Energy');
+    } else if (selectedCategory === 'AUTO') {
+      list = list.filter(s => s.sector === 'Automobile');
+    }
+
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return list.slice(0, 8); // Top default trending
+
+    return list.filter(s => 
+      s.symbol.toLowerCase().includes(q) ||
+      s.companyName.toLowerCase().includes(q) ||
+      s.sector?.toLowerCase().includes(q) ||
+      s.industry?.toLowerCase().includes(q)
+    ).slice(0, 15);
+  }, [stocks, searchQuery, selectedCategory]);
+
+  // Filter matching indices based on search query
+  const matchingIndices = React.useMemo(() => {
+    if (!searchQuery.trim() || !indices?.length) return [];
+    const q = searchQuery.trim().toLowerCase();
+    return indices.filter(idx => idx.name.toLowerCase().includes(q));
+  }, [indices, searchQuery]);
+
+  const handleSelectStockForTrading = (stock) => {
+    dispatch(setSelectedSymbol(stock.symbol));
+    navigate('/terminal');
+    setIsSearchFocused(false);
+  };
   
   // Recharts colors
   const COLORS = ['#10b981', '#ef4444'];
@@ -138,6 +224,213 @@ const Dashboard = () => {
           </button>
         </div>
       )}
+
+      {/* Market Search & Asset Discovery Section */}
+      <div ref={searchContainerRef} className="relative z-30">
+        <div className="glass-card rounded-2xl p-4 border border-gray-800/90 shadow-xl bg-gradient-to-r from-gray-900/90 via-gray-900/70 to-blue-950/20 backdrop-blur-xl">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            {/* Search Input Box */}
+            <div className="relative flex-1">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                <Search className={`w-4 h-4 transition-colors ${isSearchFocused ? 'text-blue-400' : 'text-gray-500'}`} />
+              </div>
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setIsSearchFocused(true)}
+                placeholder="Search stocks by symbol (e.g. RELIANCE, TCS, INFY), company name, sector, or index..."
+                className="w-full bg-gray-950/80 border border-gray-700/60 focus:border-blue-500 rounded-xl pl-10 pr-24 py-2.5 text-xs sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-inner"
+              />
+              <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center space-x-1.5">
+                {searchQuery ? (
+                  <button 
+                    onClick={() => setSearchQuery('')}
+                    className="p-1 text-gray-400 hover:text-white rounded-lg hover:bg-gray-800 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <div className="hidden sm:flex items-center space-x-1">
+                    <kbd className="px-1.5 py-0.5 text-[10px] font-mono text-gray-400 bg-gray-800/80 border border-gray-700 rounded shadow-sm">
+                      Ctrl + K
+                    </kbd>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Quick Filter Category Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-none text-[11px]">
+              {[
+                { id: 'ALL', label: 'All' },
+                { id: 'NIFTY 50', label: 'Nifty 50' },
+                { id: 'BANKING', label: 'Banking' },
+                { id: 'IT', label: 'IT' },
+                { id: 'PHARMA', label: 'Pharma' },
+                { id: 'AUTO', label: 'Auto' },
+                { id: 'ENERGY', label: 'Energy' }
+              ].map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => {
+                    setSelectedCategory(cat.id);
+                    setIsSearchFocused(true);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-semibold transition-all whitespace-nowrap ${
+                    selectedCategory === cat.id
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                      : 'bg-gray-800/60 text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Search Results Dropdown Overlay */}
+          {isSearchFocused && (
+            <div className="absolute left-0 right-0 top-full mt-2 glass-card rounded-2xl border border-gray-700/80 bg-gray-950/95 shadow-2xl backdrop-blur-2xl overflow-hidden divide-y divide-gray-800/60 animate-in fade-in duration-150">
+              
+              {/* Header Info */}
+              <div className="px-4 py-2 bg-gray-900/60 flex items-center justify-between text-[11px] text-gray-400 font-medium">
+                <span className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                  {searchQuery ? `Search results for "${searchQuery}"` : `Trending & ${selectedCategory === 'ALL' ? 'Top Traded' : selectedCategory} Stocks`}
+                </span>
+                <span className="text-[10px] text-gray-500">
+                  {filteredStocks.length} {filteredStocks.length === 1 ? 'stock' : 'stocks'} found
+                </span>
+              </div>
+
+              {/* Matching Indices (if any match query) */}
+              {matchingIndices.length > 0 && (
+                <div className="p-3 bg-blue-950/20">
+                  <p className="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <Layers className="w-3 h-3" /> Matching Indices
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {matchingIndices.map(idx => {
+                      const isGreen = idx.change >= 0;
+                      return (
+                        <div
+                          key={idx.name}
+                          onClick={() => {
+                            setSelectedIndex(idx.name);
+                            setIsSearchFocused(false);
+                          }}
+                          className="p-2.5 bg-gray-900/80 hover:bg-blue-900/30 border border-gray-800 hover:border-blue-500/40 rounded-xl cursor-pointer transition-all"
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-bold text-white truncate">{idx.name}</span>
+                            <span className={`text-[10px] font-semibold ${isGreen ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {isGreen ? '+' : ''}{idx.pctChange}%
+                            </span>
+                          </div>
+                          <p className="text-xs font-black text-gray-300 mt-1">₹{idx.value.toLocaleString('en-IN')}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Stock Results List */}
+              <div className="max-h-72 overflow-y-auto divide-y divide-gray-900/80">
+                {filteredStocks.length === 0 ? (
+                  <div className="p-8 text-center">
+                    <Search className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+                    <p className="text-sm font-semibold text-gray-300">No matching stocks found</p>
+                    <p className="text-xs text-gray-500 mt-1">Try searching by symbol (e.g. RELIANCE), company name, or sector</p>
+                  </div>
+                ) : (
+                  filteredStocks.map((stock) => {
+                    const change = stock.currentPrice - stock.prevClose;
+                    const pctChange = stock.prevClose > 0 ? (change / stock.prevClose) * 100 : 0;
+                    const isGreen = change >= 0;
+
+                    return (
+                      <div
+                        key={stock.symbol}
+                        className="px-4 py-3 hover:bg-gray-900/80 flex items-center justify-between transition-colors group cursor-pointer"
+                        onClick={() => handleSelectStockForTrading(stock)}
+                      >
+                        {/* Symbol & Name */}
+                        <div className="flex items-center space-x-3 min-w-0">
+                          <div className="w-9 h-9 rounded-xl bg-blue-950/60 border border-blue-800/40 flex items-center justify-center text-xs font-black text-blue-400 shrink-0 group-hover:scale-105 transition-transform">
+                            {stock.symbol.slice(0, 2)}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center space-x-2">
+                              <span className="text-xs sm:text-sm font-bold text-white group-hover:text-blue-400 transition-colors">
+                                {stock.symbol}
+                              </span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700/60 font-mono">
+                                {stock.exchange || 'NSE'}
+                              </span>
+                              {stock.sector && (
+                                <span className="hidden sm:inline-block text-[10px] text-gray-500">
+                                  · {stock.sector}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-gray-400 truncate max-w-[200px] sm:max-w-xs">
+                              {stock.companyName}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Price & Action Buttons */}
+                        <div className="flex items-center space-x-3 sm:space-x-4 shrink-0">
+                          <div className="text-right">
+                            <p className="text-xs sm:text-sm font-bold text-white">
+                              ₹{stock.currentPrice?.toFixed(2)}
+                            </p>
+                            <p className={`text-[10px] font-semibold flex items-center justify-end ${isGreen ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {isGreen ? <ArrowUpRight className="w-3 h-3 mr-0.5" /> : <ArrowDownRight className="w-3 h-3 mr-0.5" />}
+                              {isGreen ? '+' : ''}{pctChange.toFixed(2)}%
+                            </p>
+                          </div>
+
+                          {/* Quick Actions */}
+                          <div className="flex items-center space-x-1.5" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              title="Open Candlestick Chart"
+                              onClick={() => {
+                                setSelectedStockForChart(stock);
+                                setIsSearchFocused(false);
+                              }}
+                              className="p-1.5 rounded-lg bg-gray-800/80 hover:bg-gray-700 text-gray-300 hover:text-white border border-gray-700/60 transition-colors"
+                            >
+                              <BarChart2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              title="Trade in Terminal"
+                              onClick={() => handleSelectStockForTrading(stock)}
+                              className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold shadow-md shadow-blue-500/20 transition-colors"
+                            >
+                              <Zap className="w-3 h-3" />
+                              <span className="hidden sm:inline">Trade</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Footer navigation info */}
+              <div className="px-4 py-2 bg-gray-900/70 flex items-center justify-between text-[10px] text-gray-500">
+                <span>Click stock or "Trade" to jump directly to Terminal</span>
+                <span>Press <kbd className="bg-gray-800 text-gray-400 px-1 py-0.5 rounded border border-gray-700">Esc</kbd> to close</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
       
       {/* Major Indices Dashboard */}
       <div>
@@ -510,6 +803,20 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Quick Chart Modal from Search */}
+      {selectedStockForChart && (
+        <ChartModal
+          selectedStock={selectedStockForChart}
+          socket={socket}
+          onClose={() => setSelectedStockForChart(null)}
+          onTrade={(sym) => {
+            dispatch(setSelectedSymbol(sym));
+            navigate('/terminal');
+            setSelectedStockForChart(null);
+          }}
+        />
       )}
     </div>
   );
